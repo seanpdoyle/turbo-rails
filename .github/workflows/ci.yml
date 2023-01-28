@@ -32,7 +32,7 @@ jobs:
       - name: Install Ruby
         uses: ruby/setup-ruby@v1
         with:
-          rubygem: 3.3.13
+          rubygems: 3.3.13
           ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
 
