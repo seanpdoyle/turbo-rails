@@ -7,6 +7,21 @@ module Turbo
 
       # FIXME: Should happen in Rails at a different level
       delegate :dom_id, :dom_class, to: ActionView::RecordIdentifier
+
+      attr_accessor :html_document
+
+      begin
+        require "rails-dom-testing"
+
+        unless ancestors.include?(Rails::Dom::Testing::Assertions)
+          include Rails::Dom::Testing::Assertions
+
+          def document_root_element
+            @html_document.root
+          end
+        end
+      rescue NameError
+      end
     end
 
     def assert_turbo_stream(action:, target: nil, targets: nil, status: :ok, &block)
@@ -35,7 +50,7 @@ module Turbo
 
       turbo_streams = broadcasts_on_stream.map do |message|
         html = ActiveSupport::JSON.decode(message)
-        fragment = Nokogiri::HTML(html)
+        fragment = Nokogiri::HTML::DocumentFragment.parse(html)
 
         fragment.at("turbo-stream")
       end
@@ -52,7 +67,25 @@ module Turbo
         if template.nil? && block
           flunk "Broadcasted turbo-stream has no <template> element"
         else
-          template.yield_self(&block)
+          if template
+            if defined?(Rails::Dom::Testing::Assertions) && self.class.ancestors.include?(Rails::Dom::Testing::Assertions)
+              html_document = Nokogiri::HTML::Document.parse(template.children.to_s)
+            end
+
+            if defined?(Capybara::Minitest::Assertions) && self.class.ancestors.include?(Capybara::Minitest::Assertions)
+              page = Capybara.string(template.children)
+            end
+          end
+
+          begin
+            original_html_document, @html_document = @html_document, html_document
+            original_page, @page = @page, page
+
+            template.yield_self(&block)
+          ensure
+            @html_document = original_html_document
+            @page = original_page
+          end
         end
       end
 
