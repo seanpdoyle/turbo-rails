@@ -167,6 +167,40 @@ module Turbo
           document.at("body").element_children
         end
       end
+
+      def assert_broadcastable_render(&render)
+        test_case = self
+        job_class = Class.new(ActiveJob::Base)
+
+        forbidden_controller_methods = %i[session turbo_native_app?]
+        forbidden_view_methods = %i[cookies request]
+
+        forbidden_controller_methods.each do |method_name|
+          controller.singleton_class.define_method method_name do
+            test_case.flunk "Cannot access ##{method_name} during broadcasts"
+          end
+        end
+
+        forbidden_view_methods.each do |method_name|
+          view.singleton_class.define_method method_name do
+            test_case.flunk "Cannot access ##{method_name} during broadcasts"
+          end
+        end
+
+        test_case.singleton_class.define_method :render do |*args, **options, &block|
+          raise ArgumentError, <<~ERROR if args.any?
+            Do not call render with positional arguments. Instead, call render with `partial:`
+          ERROR
+
+          super(*args, **options, &block)
+        end
+
+        job_class.define_method :perform do
+          test_case.with_options(formats: [:turbo_stream], &render)
+        end
+
+        job_class.perform_now
+      end
     end
   end
 end

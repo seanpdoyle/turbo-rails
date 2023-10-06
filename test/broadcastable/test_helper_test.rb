@@ -262,3 +262,77 @@ class Turbo::Broadcastable::TestHelper::AssertNoTurboStreamBroadcastsTest < Acti
     end
   end
 end
+
+class Turbo::Broadcastable::TestHelper::ViewTest < ActionView::TestCase
+  include Turbo::Broadcastable::TestHelper
+
+  test "#assert_broadcastable_render raises when render called with positional arguments" do
+    error = assert_raises ArgumentError do
+      assert_broadcastable_render do |broadcastable|
+        broadcastable.render "turbo_broadcastable"
+      end
+    end
+
+    assert_includes error.message, <<~ERROR
+      Do not call render with positional arguments. Instead, call render with `partial:`
+    ERROR
+  end
+
+  test "#assert_broadcastable_render does not leak positional argument change across tests" do
+    render "turbo_broadcastable"
+
+    assert_includes rendered, "Broadcastable"
+  end
+
+  test "#assert_broadcastable_render passes for a view partial" do
+    assert_broadcastable_render do |broadcastable|
+      broadcastable.render partial: "turbo_broadcastable", locals: { text: "text" }
+    end
+
+    assert_includes rendered, "Broadcastable text"
+  end
+
+  test "#assert_broadcastable_render flunks for a view partial with #current_user" do
+    assert_raises_forbidden_method_error :session do
+      assert_broadcastable_render do |broadcastable|
+        broadcastable.render partial: "not_turbo_broadcastable"
+      end
+    end
+  end
+
+  test "#assert_broadcastable_render flunks for a view partial with #session" do
+    assert_raises_forbidden_method_error :request do
+      assert_broadcastable_render do |broadcastable|
+        broadcastable.render inline: <<~ERB
+          <%= request.path %>
+        ERB
+      end
+    end
+  end
+
+  test "#assert_broadcastable_render flunks for a view partial with #turbo_native_app?" do
+    assert_raises_forbidden_method_error :turbo_native_app? do
+      assert_broadcastable_render do |broadcastable|
+        broadcastable.render inline: <<~ERB
+          <%= turbo_native_app? %>
+        ERB
+      end
+    end
+  end
+
+  test "#assert_broadcastable_render flunks for a view partial with #cookies" do
+    assert_raises_forbidden_method_error :cookies do
+      assert_broadcastable_render do |broadcastable|
+        broadcastable.render inline: <<~ERB
+          <%= cookies %>
+        ERB
+      end
+    end
+  end
+
+  def assert_raises_forbidden_method_error(method_name, &block)
+    error = assert_raises(Minitest::Assertion, &block)
+
+    assert_includes error.message, "Cannot access ##{method_name} during broadcasts"
+  end
+end
